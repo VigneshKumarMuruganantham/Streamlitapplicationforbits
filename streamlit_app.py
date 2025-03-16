@@ -1,15 +1,4 @@
 import os
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
-
-import torch
-print("Number of GPU: ", torch.cuda.device_count())
-print("GPU Name: ", torch.cuda.get_device_name())
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print('Using device:', device)
-
-
-
-import os
 import torch
 import re
 import numpy as np
