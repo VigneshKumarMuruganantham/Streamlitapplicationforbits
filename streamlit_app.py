@@ -170,7 +170,7 @@ def handle_query(query, all_chunks, chunk_embeddings, documents):
     
     return response, embedding_scores, bm25_scores, reranked_scores
 
-def streamapplicationmain(all_chunks, chunk_embeddings, documents):
+def streamapplicationmain(all_chunks, chunk_embeddings, documents, filenames):
     set_dark_mode_and_styling()
     if 'answer' not in st.session_state:
         st.session_state.answer = "Awaiting query..."
@@ -196,6 +196,13 @@ def streamapplicationmain(all_chunks, chunk_embeddings, documents):
     st.markdown('<div class="confidence-field">', unsafe_allow_html=True)
     st.text_area("Confidence Level", value=f"{st.session_state.confidence * 100:.2f}%", height=100)
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Displaying filenames and some document snippets in Streamlit
+    st.subheader("Loaded Files and Document Snippets")
+    for i, filename in enumerate(filenames):
+        st.write(f"**File**: {filename}")
+        st.write(f"**First 200 characters**: {documents[i][:200]}...")  # Print the first 200 characters as a preview
+        st.markdown("-" * 50)
 
 ### 6. Main Function
 
@@ -203,19 +210,14 @@ def main():
     github_repo_url = "https://api.github.com/repos/username/repo/contents/"  # Replace with your GitHub repo URL
     documents, filenames = load_and_preprocess_data_from_github(github_repo_url)
     
-    # Print the file names and some lines from each document
-    for i, filename in enumerate(filenames):
-        print(f"File: {filename}")
-        print(f"First 3 lines: {documents[i][:200]}...")  # Print the first 200 characters as a preview
-        print("-" * 50)
-    
+    # Chunking the documents
     all_chunks = []
     for doc in documents:
         all_chunks.extend(chunk_text(doc))
 
     chunk_embeddings = embed_text(all_chunks)
 
-    streamapplicationmain(all_chunks, chunk_embeddings, documents)
+    streamapplicationmain(all_chunks, chunk_embeddings, documents, filenames)
 
 if __name__ == "__main__":
     main()
