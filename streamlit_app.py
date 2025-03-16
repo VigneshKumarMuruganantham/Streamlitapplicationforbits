@@ -4,6 +4,7 @@ import re
 import numpy as np
 import nltk
 import streamlit as st
+import requests
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from nltk.tokenize import sent_tokenize, word_tokenize
@@ -20,19 +21,31 @@ print('Using device:', device)
 
 ### 1. Data Collection & Preprocessing
 
-def load_and_preprocess_data(data_dir):
-    """Loads and preprocesses financial text data from a directory."""
-    documents = []
-    filenames = []
-    for filename in os.listdir(data_dir):
-        if filename.endswith(".txt"):
-            filepath = os.path.join(data_dir, filename)
-            with open(filepath, "r", encoding="utf-8") as f:
-                text = re.sub(r'\s+', ' ', f.read()).strip()
-                documents.append(text)
-                filenames.append(filename)
-    print(f"Loaded {len(documents)} documents.")
-    return documents, filenames
+def load_and_preprocess_data_from_github(repo_owner, repo_name, folder_path, branch="main", access_token=None):
+    """Loads and preprocesses financial text data from a GitHub repository."""
+    url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{folder_path}?ref={branch}"
+    headers = {"Authorization": f"token {access_token}"} if access_token else {}
+    
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code == 200:
+        files = response.json()
+        documents = []
+        filenames = []
+        
+        for file in files:
+            if file['name'].endswith('.txt'):
+                file_url = file['download_url']
+                file_response = requests.get(file_url)
+                if file_response.status_code == 200:
+                    text = re.sub(r'\s+', ' ', file_response.text).strip()
+                    documents.append(text)
+                    filenames.append(file['name'])
+        print(f"Loaded {len(documents)} documents from GitHub.")
+        return documents, filenames
+    else:
+        print(f"Error fetching data from GitHub: {response.status_code}")
+        return [], []
 
 def chunk_text(text, chunk_size=512, overlap=50):
     """Chunks text into smaller pieces with overlap."""
@@ -167,8 +180,15 @@ def streamapplicationmain(all_chunks, chunk_embeddings, documents):
 ### 6. Main Function
 def main():
 
-    data_dir = "/financial_data"  # Replace with your data directory
-    documents, filenames = load_and_preprocess_data(data_dir)
+    # GitHub repository details
+    repo_owner = "VigneshKumarMuruganantham"
+    repo_name = "Streamlitapplicationforbits"
+    folder_path = "financial_documents"  # Replace with your GitHub folder path
+    access_token = "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"  # Your GitHub access token (if private repo)
+
+    # Load and preprocess data from GitHub
+    documents, filenames = load_and_preprocess_data_from_github(repo_owner, repo_name, folder_path, access_token=access_token)
+    
     all_chunks = []
     for doc in documents:
         all_chunks.extend(chunk_text(doc))
