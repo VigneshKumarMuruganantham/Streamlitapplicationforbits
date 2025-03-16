@@ -4,6 +4,7 @@ import re
 import numpy as np
 import nltk
 import streamlit as st
+import requests
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from nltk.tokenize import sent_tokenize, word_tokenize
@@ -20,18 +21,33 @@ print('Using device:', device)
 
 ### 1. Data Collection & Preprocessing
 
-def load_and_preprocess_data(data_dir):
-    """Loads and preprocesses financial text data from a directory."""
+def load_and_preprocess_data_from_github(repo_url, file_extensions=[".txt"]):
+    """Loads and preprocesses financial text data from a GitHub repository."""
     documents = []
     filenames = []
-    for filename in os.listdir(data_dir):
-        if filename.endswith(".txt"):
-            filepath = os.path.join(data_dir, filename)
-            with open(filepath, "r", encoding="utf-8") as f:
-                text = re.sub(r'\s+', ' ', f.read()).strip()
-                documents.append(text)
-                filenames.append(filename)
-    print(f"Loaded {len(documents)} documents.")
+    
+    # Example GitHub repo raw URL: "https://raw.githubusercontent.com/username/repo/main/"
+    for ext in file_extensions:
+        api_url = f"{repo_url}?ref=main"
+        response = requests.get(api_url)
+        
+        if response.status_code == 200:
+            # Parse files
+            files = response.json()  # Assuming GitHub API returns JSON data with file URLs
+            for file in files:
+                if file['name'].endswith(ext):
+                    file_url = file['download_url']
+                    text_response = requests.get(file_url)
+                    if text_response.status_code == 200:
+                        text = re.sub(r'\s+', ' ', text_response.text).strip()
+                        documents.append(text)
+                        filenames.append(file['name'])
+                    else:
+                        print(f"Failed to download file: {file['name']}")
+        else:
+            print(f"Failed to access GitHub repo: {repo_url}")
+    
+    print(f"Loaded {len(documents)} documents from GitHub.")
     return documents, filenames
 
 def chunk_text(text, chunk_size=512, overlap=50):
@@ -175,8 +191,9 @@ def streamapplicationmain(all_chunks, chunk_embeddings, documents):
 ### 6. Main Function
 
 def main():
-    data_dir = "C:/Users/bhara/financial_data"  # Replace with your data directory or GitHub repository
-    documents, filenames = load_and_preprocess_data(data_dir)
+    github_repo_url = "https://api.github.com/repos/username/repo/contents/"  # Replace with your GitHub repo URL
+    documents, filenames = load_and_preprocess_data_from_github(github_repo_url)
+    
     all_chunks = []
     for doc in documents:
         all_chunks.extend(chunk_text(doc))
