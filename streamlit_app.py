@@ -245,8 +245,10 @@ def streamapplicationmain(all_chunks, chunk_embeddings, documents):
     st.text_area("Answer", value=st.session_state.answer, height=150)
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # Changed height from 50 to 70 (minimum required is 68)
     st.markdown('<div class="confidence-field">', unsafe_allow_html=True)
-    st.text_area("Confidence Level", value=f"{st.session_state.confidence * 100:.2f}%" if st.session_state.confidence else "N/A", height=50)
+    confidence_value = f"{st.session_state.confidence * 100:.2f}%" if st.session_state.confidence else "N/A"
+    st.text_area("Confidence Level", value=confidence_value, height=70)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Add debug section in the sidebar
