@@ -1,0 +1,10 @@
+{
+  "input": {
+    "input_field": "value"
+  },
+  "output": {
+    "output_field_1": "value_1",
+    "output_field_2": "value_2"
+  },
+  "status": "success"
+}
