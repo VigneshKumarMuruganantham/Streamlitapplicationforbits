@@ -32,6 +32,7 @@ def load_and_preprocess_data_from_github(repo_url, file_extensions=[".txt"]):
         response = requests.get(api_url)
         
         if response.status_code == 200:
+            # Parse files
             files = response.json()  # Assuming GitHub API returns JSON data with file URLs
             for file in files:
                 if file['name'].endswith(ext):
@@ -78,19 +79,18 @@ def chunk_text(text, chunk_size=512, overlap=50):
 def embed_text(texts, model_name="all-MiniLM-L6-v2"):
     """Embeds text using Sentence Transformers."""
     model = SentenceTransformer(model_name)
-    embeddings = model.encode(texts)
-    return np.array(embeddings).reshape(-1, embeddings.shape[-1])
+    
+    # Encode the texts
+    embeddings = model.encode(texts, convert_to_numpy=True)
+    
+    # Check the shape of the embeddings for debugging
+    print(f"Embeddings shape: {embeddings.shape}")
+    
+    return embeddings
 
 def retrieve_relevant_chunks_embedding(query_embedding, document_embeddings, chunks, top_k=3):
     """Retrieves relevant chunks based on embedding similarity."""
-    # Reshape query_embedding to be 2D if it's a single vector
-    query_embedding = np.atleast_2d(query_embedding)
-
-    # Check the shapes of the embeddings for debugging
-    print(f"Query embedding shape: {query_embedding.shape}")
-    print(f"Document embeddings shape: {document_embeddings.shape}")
-
-    similarities = cosine_similarity(query_embedding, document_embeddings)[0]
+    similarities = cosine_similarity([query_embedding], document_embeddings)[0]
     relevant_indices = np.argsort(similarities)[::-1][:top_k]
     return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
 
@@ -115,10 +115,7 @@ def retrieve_relevant_chunks_bm25(query, documents, top_k=3):
 
 def rerank_chunks(query_embedding, chunk_embeddings, chunks, top_k=3):
     """Reranks chunks based on embedding similarity."""
-    # Reshape query_embedding to ensure it's 2D
-    query_embedding = np.atleast_2d(query_embedding)
-
-    similarities = cosine_similarity(query_embedding, chunk_embeddings)[0]
+    similarities = cosine_similarity([query_embedding], chunk_embeddings)[0]
     relevant_indices = np.argsort(similarities)[::-1][:top_k]
     print(f"Reranked {top_k} chunks.")  # debug
     return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
