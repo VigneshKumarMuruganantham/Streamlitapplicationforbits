@@ -203,6 +203,12 @@ def main():
     github_repo_url = "https://api.github.com/repos/username/repo/contents/"  # Replace with your GitHub repo URL
     documents, filenames = load_and_preprocess_data_from_github(github_repo_url)
     
+    # Print the file names and some lines from each document
+    for i, filename in enumerate(filenames):
+        print(f"File: {filename}")
+        print(f"First 3 lines: {documents[i][:200]}...")  # Print the first 200 characters as a preview
+        print("-" * 50)
+    
     all_chunks = []
     for doc in documents:
         all_chunks.extend(chunk_text(doc))
