@@ -77,6 +77,8 @@ def preprocess_documents(documents):
         preprocessed.append(doc)
     return preprocessed
 
+### 2. BM25 & Sentence Transformer Setup
+
 def setup_search_model():
     """Sets up BM25 and Sentence Transformer."""
     model = SentenceTransformer('paraphrase-MiniLM-L6-v2', device=device)
@@ -108,7 +110,7 @@ def get_top_documents(query, documents, model, top_k=3):
     
     return top_docs
 
-### 2. Streamlit UI for User Interaction
+### 3. Streamlit UI for User Interaction
 
 def query_documents(query, documents, model):
     """Display query results using Streamlit."""
