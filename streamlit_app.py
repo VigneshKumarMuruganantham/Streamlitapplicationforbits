@@ -1,7 +1,6 @@
 import os
-import re
-import requests
 import torch
+import re
 import numpy as np
 import nltk
 import streamlit as st
@@ -20,50 +19,31 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
 ### 1. Data Collection & Preprocessing
-def load_and_preprocess_data_from_github():
-    """Loads and preprocesses financial text data from the GitHub repository."""
-    username = "VigneshKumarMuruganantham"  # Your GitHub username
-    repository = "Streamlitapplicationforbits"  # Your repository name
-    file_path = "financial_data"  # Folder name containing the .txt files
-    branch = "main"  # Branch name
-    access_token = "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"  # GitHub Personal Access Token
 
-    # GitHub API URL for accessing the folder contents
-    github_api_url = f"https://api.github.com/repos/{username}/{repository}/contents/{file_path}?ref={branch}"
-    
-    headers = {
-        "Authorization": f"token {access_token}"
-    }
-    
-    response = requests.get(github_api_url, headers=headers)
-    
-    # Debugging: Print response status code and content
-    print(f"Response Status Code: {response.status_code}")
-    print(f"Response Content: {response.text}")
-    
-    if response.status_code == 200:
-        files = response.json()
-        documents = []
-        filenames = []
-        for file in files:
-            if file['name'].endswith('.txt'):
-                file_url = file['download_url']
-                file_response = requests.get(file_url)
-                if file_response.status_code == 200:
-                    text = re.sub(r'\s+', ' ', file_response.text).strip()
-                    documents.append(text)
-                    filenames.append(file['name'])
-                    # Print filename and first 50 characters of the content
-                    print(f"Loaded file: {file['name']}")
-                    print(f"First 50 characters: {text[:50]}")
-        if documents:
-            return documents, filenames
-        else:
-            print("No .txt files found in the specified folder.")
-            return [], []
-    else:
-        print(f"Error fetching files from GitHub: {response.status_code}")
-        return [], []
+def load_and_preprocess_data():
+    """Predefined financial text data."""
+    content = """
+    Accelerated growth momentum across businesses led to strong quarterly results
+    Delivered highest ever Q1 consolidated profit, with strong performance across businesses
+    Consolidated1 Revenue grew 26% year on year to Rs.5,859 Crore
+    Consolidated PAT grew 42% year on year to Rs.429 Crore
+    Active customer base at 39 million (up 55% year on year) aided by focus on granular retail growth across all businesses
+    On track to deliver ahead of long term guidance (FY24) across businesses
+
+    (Rs. crore)
+
+    Consolidated results
+     	Quarter 1
+    Particulars	FY 22	FY 23	 
+    Revenue1	4,632	5,859	26%
+    Profit after tax (after minority interest)	302	429	42%
+
+    Mumbai: Aditya Birla Capital Limited (“The Company”) announced its unaudited financial results for the quarter ended 30th June 2022.
+    """
+    documents = [content]
+    filenames = ["financial_report.txt"]
+    print(f"Loaded {len(documents)} documents.")
+    return documents, filenames
 
 def chunk_text(text, chunk_size=512, overlap=50):
     """Chunks text into smaller pieces with overlap."""
@@ -82,129 +62,76 @@ def chunk_text(text, chunk_size=512, overlap=50):
     overlapped_chunks = []
     for i in range(len(chunks)):
         if i + 1 < len(chunks):
-            overlapped_chunks.append(chunks[i] + " " + " ".join(chunks[i+1].split(" ")[:overlap]))
+            overlapped_chunks.append(chunks[i] + " " + chunks[i+1][:overlap])
         else:
             overlapped_chunks.append(chunks[i])
     
-    print(f"Chunked text into {len(overlapped_chunks)} chunks.")
     return overlapped_chunks
 
-### 2. Basic RAG Implementation
-def embed_text(texts, model_name="all-MiniLM-L6-v2"):
-    """Embeds text using Sentence Transformers."""
-    model = SentenceTransformer(model_name)
-    return model.encode(texts)
-
-def retrieve_relevant_chunks_embedding(query_embedding, document_embeddings, chunks, top_k=3):
-    """Retrieves relevant chunks based on embedding similarity."""
-    similarities = cosine_similarity([query_embedding], document_embeddings)[0]
-    relevant_indices = np.argsort(similarities)[::-1][:top_k]
-    return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
-
-### 3. Advanced RAG Implementation (Multi-Stage Retrieval)
-def retrieve_relevant_chunks_bm25(query, documents, top_k=3):
-    """Retrieves relevant chunks using BM25."""
-    tokenized_docs = [word_tokenize(doc.lower()) for doc in documents]
-    bm25 = BM25Okapi(tokenized_docs)
-    tokenized_query = word_tokenize(query.lower())
-    doc_scores = bm25.get_scores(tokenized_query)
-    relevant_indices = np.argsort(doc_scores)[::-1][:top_k]
-    return [documents[i] for i in relevant_indices], doc_scores[relevant_indices]
-
-def rerank_chunks(query_embedding, chunk_embeddings, chunks, top_k=3):
-    """Reranks chunks based on embedding similarity."""
-    similarities = cosine_similarity([query_embedding], chunk_embeddings)[0]
-    relevant_indices = np.argsort(similarities)[::-1][:top_k]
-    print(f"Reranked {top_k} chunks.") #debug
-    return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
-
-def generate_response(query, relevant_chunks):
-    """Generates a response using retrieved chunks."""
-    return " ".join(relevant_chunks)
-
-### 4. Guard Rail Implementation
-def is_valid_financial_query(query):
-    """Validates if the query is a financial question."""
-    financial_keywords = ["revenue", "profit", "earnings", "expenses", "balance sheet", "cash flow", "financial", "growth", "debt", "assets", "liabilities"]
-    return any(keyword in query.lower() for keyword in financial_keywords)
-
-### 5. Streamlit Implementation
-def set_dark_mode_and_styling():
-    """Injects custom CSS for dark mode and styling."""
-    custom_css = """
-    <style>
-        body { background-color: #1E1E1E; color: white; }
-        .stTextInput input, .stTextArea textarea {
-            background-color: #333; color: white; border-radius: 10px;
-        }
-        .stButton button { background-color: #4CAF50; color: white; }
-        .answer-field, .confidence-field { width: 50% !important; margin: 0 auto; }
-    </style>
-    """
-    st.markdown(custom_css, unsafe_allow_html=True)
-
-def handle_query(query, all_chunks, chunk_embeddings, documents):
-    """Handles user query."""
-    if not is_valid_financial_query(query):
-        st.error("Invalid query. Please ask a financial question.")
-        return None, None, None, None
-    
-    # BM25 retrieval
-    bm25_chunks, bm25_scores = retrieve_relevant_chunks_bm25(query, documents)
-    
-    # Embedding-based retrieval
-    query_embedding = embed_text([query])[0]
-    embedding_chunks, embedding_scores = retrieve_relevant_chunks_embedding(query_embedding, chunk_embeddings, all_chunks)
-    
-    # Reranking
-    reranked_chunks, reranked_scores = rerank_chunks(query_embedding, embed_text(embedding_chunks), embedding_chunks)
-    
-    # Generate response
-    response = generate_response(query, reranked_chunks)
-    
-    return response, embedding_scores, bm25_scores, reranked_scores
-
-def streamapplicationmain(all_chunks, chunk_embeddings, documents):
-    set_dark_mode_and_styling()
-    if 'answer' not in st.session_state:
-        st.session_state.answer = "Awaiting query..."
-    if 'confidence' not in st.session_state:
-        st.session_state.confidence = 0.0
-
-    st.title("Financial Query Chatbot")
-    st.subheader("Ask your financial queries, and get answers instantly!")
-
-    query = st.text_input("Enter your financial query:")
-
-    if st.button("Get Answer"):
-        response, embedding_scores, bm25_scores, reranked_scores = handle_query(query, all_chunks, chunk_embeddings, documents)
-        
-        if response:
-            st.session_state.answer = response
-            st.session_state.confidence = reranked_scores[0] if reranked_scores.size > 0 else 0.0
-
-    st.markdown('<div class="answer-field">', unsafe_allow_html=True)
-    st.text_area("Answer", value=st.session_state.answer, height=150)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="confidence-field">', unsafe_allow_html=True)
-    st.text_area("Confidence Level", value=f"{st.session_state.confidence * 100:.2f}%", height=100)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-### 6. Main Function
-def main():
-    documents, filenames = load_and_preprocess_data_from_github()
-    if not documents:
-        print("No documents found.")
-        return
-
-    all_chunks = []
+def preprocess_documents(documents):
+    """Preprocesses documents."""
+    preprocessed = []
     for doc in documents:
-        all_chunks.extend(chunk_text(doc))
+        doc = re.sub(r'\s+', ' ', doc)
+        doc = re.sub(r'[^a-zA-Z0-9\s]', '', doc)
+        preprocessed.append(doc)
+    return preprocessed
 
-    chunk_embeddings = embed_text(all_chunks)
+def setup_search_model():
+    """Sets up BM25 and Sentence Transformer."""
+    model = SentenceTransformer('paraphrase-MiniLM-L6-v2', device=device)
+    return model
 
-    streamapplicationmain(all_chunks, chunk_embeddings, documents)
+def run_query(query, documents, model):
+    """Runs a query against the documents."""
+    # Preprocessing
+    documents = preprocess_documents(documents)
+    # Create BM25 object for term frequency-based search
+    tokenized_corpus = [word_tokenize(doc.lower()) for doc in documents]
+    bm25 = BM25Okapi(tokenized_corpus)
+    
+    # Query processing
+    tokenized_query = word_tokenize(query.lower())
+    bm25_scores = bm25.get_scores(tokenized_query)
+
+    # Rank by BM25 scores
+    ranked_docs_by_bm25 = np.argsort(bm25_scores)[::-1]
+    
+    return ranked_docs_by_bm25, bm25_scores
+
+def get_top_documents(query, documents, model, top_k=3):
+    """Retrieve top documents based on query and BM25."""
+    ranked_docs, bm25_scores = run_query(query, documents, model)
+    top_docs = []
+    for idx in ranked_docs[:top_k]:
+        top_docs.append(documents[idx])
+    
+    return top_docs
+
+### 2. Streamlit UI for User Interaction
+
+def query_documents(query, documents, model):
+    """Display query results using Streamlit."""
+    # Retrieve top documents
+    top_docs = get_top_documents(query, documents, model, top_k=3)
+    
+    st.write("### Query Results")
+    for idx, doc in enumerate(top_docs):
+        st.write(f"**Document {idx+1}:**")
+        st.write(doc)
+
+def main():
+    """Run the Streamlit application."""
+    # Load and preprocess data
+    documents, filenames = load_and_preprocess_data()
+    model = setup_search_model()
+
+    # Streamlit Input
+    st.title("Financial Query Chatbot")
+    query = st.text_input("Enter your query:")
+
+    if query:
+        query_documents(query, documents, model)
 
 if __name__ == "__main__":
     main()
