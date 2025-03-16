@@ -1,63 +1,48 @@
+import os
 import streamlit as st
-import requests
-import base64
 
-# GitHub repository details
-username = "VigneshKumarMuruganantham"
-repository = "Streamlitapplicationforbits"
-file_path = ""  # Leave it empty if you want to fetch files from the root folder
-branch = "main"  # Ensure the branch is set to 'main'
-access_token = "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"  # GitHub Personal Access Token
+# Path to the folder containing the .txt files
+file_path = "financial_data"  # This folder should contain the .txt files
 
-# GitHub API URL for accessing the folder contents in the 'main' branch
-github_api_url = f"https://api.github.com/repos/{username}/{repository}/contents/{file_path}?ref={branch}"
-
-# Set up the headers for authentication
-headers = {
-    "Authorization": f"token {access_token}"
-}
-
-# Function to fetch file list from the repository (in the 'main' branch)
+# Function to fetch file list from the local directory
 def fetch_file_list():
-    response = requests.get(github_api_url, headers=headers)
-    if response.status_code == 200:
-        return response.json()  # Returns list of files from the root folder in the 'main' branch
-    elif response.status_code == 401:
-        st.error("Authentication failed: Unauthorized (401). Please check your GitHub token.")
-    else:
-        st.error(f"Failed to fetch file list. Status code: {response.status_code}")
-    return []
+    try:
+        # Get the list of files in the 'financial_data' folder
+        files = os.listdir(file_path)
+        # Filter for .txt files
+        txt_files = [f for f in files if f.endswith('.txt')]
+        return txt_files
+    except FileNotFoundError:
+        st.error("The 'financial_data' folder was not found.")
+        return []
 
-# Function to fetch file content from GitHub
-def fetch_file_content(file_url):
-    response = requests.get(file_url, headers=headers)
-    if response.status_code == 200:
-        file_data = response.json()
-        # Decode the file content from base64
-        file_content = base64.b64decode(file_data['content']).decode('utf-8')
-        return file_content
-    else:
-        st.error(f"Failed to fetch file content. Status code: {response.status_code}")
+# Function to read the content of a .txt file
+def read_file_content(file_name):
+    try:
+        with open(os.path.join(file_path, file_name), "r") as file:
+            content = file.read()
+        return content
+    except Exception as e:
+        st.error(f"Error reading {file_name}: {e}")
         return ""
 
-# Streamlit UI
+# Streamlit UI to display the file names and sample content
 def display_files():
     file_list = fetch_file_list()
     if not file_list:
+        st.write("No .txt files found in the 'financial_data' folder.")
         return
 
     # Display the file names and sample content
-    for file in file_list:
-        file_name = file['name']
-        if file_name.endswith('.txt'):
-            st.write(f"### File: {file_name}")
+    for file_name in file_list:
+        st.write(f"### File: {file_name}")  # Display the file name
 
-            # Fetch and display the sample content of the file
-            file_content = fetch_file_content(file['download_url'])
-            sample_data = file_content[:500]  # Displaying first 500 characters as a sample
+        # Fetch and display the sample content of the file
+        file_content = read_file_content(file_name)
+        sample_data = file_content[:500]  # Displaying first 500 characters as a sample
 
-            st.write(f"**Sample Data:**")
-            st.write(sample_data)
+        st.write(f"**Sample Data:**")
+        st.write(sample_data)
 
 # Run the Streamlit app
 if __name__ == "__main__":
