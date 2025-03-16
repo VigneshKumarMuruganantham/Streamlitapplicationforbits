@@ -167,7 +167,7 @@ def streamapplicationmain(all_chunks, chunk_embeddings, documents):
 ### 6. Main Function
 def main():
 
-    data_dir = "C:/Users/bhara/financial_data"  # Replace with your data directory
+    data_dir = "/financial_data"  # Replace with your data directory
     documents, filenames = load_and_preprocess_data(data_dir)
     all_chunks = []
     for doc in documents:
