@@ -149,25 +149,57 @@ def rerank_chunks(query_embedding, chunk_embeddings, chunks, top_k=3):
     return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
 
 def generate_response(query, relevant_chunks, source_indices, source_filenames):
-    """Generates a response using retrieved chunks."""
+    """Generates a response using retrieved chunks with actual content."""
     if not relevant_chunks:
         return "No relevant information found. Please try a different query."
     
-    # Generate response with only document titles instead of content
-    response = "Based on the following financial documents:\n\n"
+    # Generate a more comprehensive response including content from chunks
+    response = "Based on my analysis of your financial query, here is the relevant information:\n\n"
     
-    # Use a set to avoid duplicate document references
-    mentioned_docs = set()
+    # Track which documents we've used
+    used_documents = {}
     
+    # Include content from each chunk with source attribution
     for i, (chunk, idx) in enumerate(zip(relevant_chunks, source_indices)):
         if idx < len(source_filenames):
             filename = source_filenames[idx]
-            if filename not in mentioned_docs:
-                response += f"- {filename}\n"
-                mentioned_docs.add(filename)
+            
+            # Extract a shorter version of the chunk to avoid overwhelming output
+            # Find sentences that have query terms for more focused responses
+            query_terms = set(simple_tokenize(query))
+            sentences = re.split(r'(?<=[.!?])\s+', chunk)
+            
+            relevant_sentences = []
+            for sentence in sentences:
+                sentence_tokens = set(simple_tokenize(sentence))
+                # If sentence contains any query terms, include it
+                if any(term in sentence_tokens for term in query_terms):
+                    relevant_sentences.append(sentence)
+            
+            # If no relevant sentences found, use the first 1-2 sentences
+            if not relevant_sentences and sentences:
+                relevant_sentences = sentences[:min(2, len(sentences))]
+            
+            relevant_content = " ".join(relevant_sentences)
+            
+            # Truncate if still too long
+            if len(relevant_content) > 300:
+                relevant_content = relevant_content[:297] + "..."
+            
+            # Add to used documents
+            if filename not in used_documents:
+                used_documents[filename] = []
+            
+            if relevant_content not in used_documents[filename]:
+                used_documents[filename].append(relevant_content)
     
-    response += "\n"
-    response += "I found information relevant to your query. For detailed analysis, please consult a financial advisor."
+    # Format the response with document titles and content
+    for filename, contents in used_documents.items():
+        response += f"From {filename}:\n"
+        for content in contents:
+            response += f"• {content}\n\n"
+    
+    response += "Please consult with a financial advisor for personalized advice based on this information."
     return response
 
 def get_document_index(chunk, all_chunks, documents):
@@ -223,7 +255,9 @@ def set_dark_mode_and_styling():
             background-color: #333; color: white; border-radius: 10px;
         }
         .stButton button { background-color: #4CAF50; color: white; }
-        .answer-field, .confidence-field { width: 50% !important; margin: 0 auto; }
+        .answer-field { width: 100% !important; margin: 0 auto; }
+        .confidence-field { width: 50% !important; margin: 0 auto; }
+        .stTextArea textarea { font-size: 16px; line-height: 1.5; }
     </style>
     """
     st.markdown(custom_css, unsafe_allow_html=True)
@@ -248,15 +282,17 @@ def handle_query(query, all_chunks, chunk_embeddings, documents, filenames):
         
         # Embedding-based retrieval
         query_embedding = embed_text([query])[0]
-        embedding_chunks, embedding_scores = retrieve_relevant_chunks_embedding(query_embedding, chunk_embeddings, all_chunks)
+        
+        # Get more chunks for better coverage
+        embedding_chunks, embedding_scores = retrieve_relevant_chunks_embedding(query_embedding, chunk_embeddings, all_chunks, top_k=5)
         
         # Reranking
-        reranked_chunks, reranked_scores = rerank_chunks(query_embedding, embed_text(embedding_chunks), embedding_chunks)
+        reranked_chunks, reranked_scores = rerank_chunks(query_embedding, embed_text(embedding_chunks), embedding_chunks, top_k=3)
         
         # Get document indices for chunks
         source_indices = [get_document_index(chunk, all_chunks, documents) for chunk in reranked_chunks]
         
-        # Generate response with document titles only
+        # Generate response with actual content
         response = generate_response(query, reranked_chunks, source_indices, filenames)
     
     return response, embedding_scores, bm25_scores, reranked_scores
