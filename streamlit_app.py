@@ -22,9 +22,11 @@ def fetch_file_list():
     response = requests.get(github_api_url, headers=headers)
     if response.status_code == 200:
         return response.json()  # Returns list of files from the root folder in the 'main' branch
+    elif response.status_code == 401:
+        st.error("Authentication failed: Unauthorized (401). Please check your GitHub token.")
     else:
         st.error(f"Failed to fetch file list. Status code: {response.status_code}")
-        return []
+    return []
 
 # Function to fetch file content from GitHub
 def fetch_file_content(file_url):
@@ -35,7 +37,7 @@ def fetch_file_content(file_url):
         file_content = base64.b64decode(file_data['content']).decode('utf-8')
         return file_content
     else:
-        st.error("Failed to fetch file content.")
+        st.error(f"Failed to fetch file content. Status code: {response.status_code}")
         return ""
 
 # Streamlit UI
