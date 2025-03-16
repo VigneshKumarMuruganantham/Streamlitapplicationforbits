@@ -1,26 +1,3 @@
-import os
-import torch
-import re
-import numpy as np
-import nltk
-import streamlit as st
-import requests
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
-from nltk.tokenize import sent_tokenize, word_tokenize
-from rank_bm25 import BM25Okapi
-
-# Ensure NLTK resources are available
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.data.path.append(os.path.expanduser("~/.cache/nltk_data"))
-
-# Set up GPU availability check
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print('Using device:', device)
-
-### 1. Data Collection & Preprocessing
-
 def load_and_preprocess_data_from_github(repo_url, file_extensions=[".txt"]):
     """Loads and preprocesses financial text data from a GitHub repository."""
     documents = []
@@ -50,128 +27,9 @@ def load_and_preprocess_data_from_github(repo_url, file_extensions=[".txt"]):
     print(f"Loaded {len(documents)} documents from GitHub.")
     return documents, filenames
 
-def chunk_text(text, chunk_size=512, overlap=50):
-    """Chunks text into smaller pieces with overlap."""
-    sentences = sent_tokenize(text)
-    chunks = []
-    current_chunk = ""
-    for sentence in sentences:
-        if len(current_chunk) + len(sentence) + 1 <= chunk_size:
-            current_chunk += sentence + " "
-        else:
-            chunks.append(current_chunk.strip())
-            current_chunk = sentence + " "
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-    
-    overlapped_chunks = []
-    for i in range(len(chunks)):
-        if i + 1 < len(chunks):
-            overlapped_chunks.append(chunks[i] + " " + " ".join(chunks[i+1].split(" ")[:overlap]))
-        else:
-            overlapped_chunks.append(chunks[i])
-    
-    print(f"Chunked text into {len(overlapped_chunks)} chunks.")
-    return overlapped_chunks
-
-### 2. Basic RAG Implementation
-
-def embed_text(texts, model_name="all-MiniLM-L6-v2"):
-    """Embeds text using Sentence Transformers."""
-    model = SentenceTransformer(model_name)
-    
-    # Encode the texts
-    embeddings = model.encode(texts, convert_to_numpy=True)
-    
-    # Check the shape of the embeddings for debugging
-    print(f"Embeddings shape: {embeddings.shape}")
-    
-    return embeddings
-
-def retrieve_relevant_chunks_embedding(query_embedding, document_embeddings, chunks, top_k=3):
-    """Retrieves relevant chunks based on embedding similarity."""
-    # Reshape query_embedding to match the dimensions of document_embeddings
-    query_embedding = query_embedding.reshape(1, -1)
-    similarities = cosine_similarity(query_embedding, document_embeddings)[0]
-    relevant_indices = np.argsort(similarities)[::-1][:top_k]
-    return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
-
-### 3. Advanced RAG Implementation (Multi-Stage Retrieval)
-
-def retrieve_relevant_chunks_bm25(query, documents, top_k=3):
-    """Retrieves relevant chunks using BM25."""
-    if len(documents) == 0:
-        return [], []
-    
-    tokenized_docs = [word_tokenize(doc.lower()) for doc in documents]
-    
-    if len(tokenized_docs) == 0:
-        return [], []
-    
-    bm25 = BM25Okapi(tokenized_docs)
-    tokenized_query = word_tokenize(query.lower())
-    doc_scores = bm25.get_scores(tokenized_query)
-    relevant_indices = np.argsort(doc_scores)[::-1][:top_k]
-    
-    return [documents[i] for i in relevant_indices], doc_scores[relevant_indices]
-
-def rerank_chunks(query_embedding, chunk_embeddings, chunks, top_k=3):
-    """Reranks chunks based on embedding similarity."""
-    similarities = cosine_similarity([query_embedding], chunk_embeddings)[0]
-    relevant_indices = np.argsort(similarities)[::-1][:top_k]
-    print(f"Reranked {top_k} chunks.")  # debug
-    return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
-
-def generate_response(query, relevant_chunks):
-    """Generates a response using retrieved chunks."""
-    return " ".join(relevant_chunks)
-
-### 4. Guard Rail Implementation
-
-def is_valid_financial_query(query):
-    """Validates if the query is a financial question."""
-    financial_keywords = ["revenue", "profit", "earnings", "expenses", "balance sheet", "cash flow", "financial", "growth", "debt", "assets", "liabilities"]
-    return any(keyword in query.lower() for keyword in financial_keywords)
-
-### 5. Streamlit Implementation
-
-def set_dark_mode_and_styling():
-    """Injects custom CSS for dark mode and styling."""
-    custom_css = """
-    <style>
-        body { background-color: #1E1E1E; color: white; }
-        .stTextInput input, .stTextArea textarea {
-            background-color: #333; color: white; border-radius: 10px;
-        }
-        .stButton button { background-color: #4CAF50; color: white; }
-        .answer-field, .confidence-field { width: 50% !important; margin: 0 auto; }
-    </style>
-    """
-    st.markdown(custom_css, unsafe_allow_html=True)
-
-def handle_query(query, all_chunks, chunk_embeddings, documents):
-    """Handles user query."""
-    if not is_valid_financial_query(query):
-        st.error("Invalid query. Please ask a financial question.")
-        return None, None, None, None
-    
-    # BM25 retrieval
-    bm25_chunks, bm25_scores = retrieve_relevant_chunks_bm25(query, documents)
-    
-    # Embedding-based retrieval
-    query_embedding = embed_text([query])[0]
-    embedding_chunks, embedding_scores = retrieve_relevant_chunks_embedding(query_embedding, chunk_embeddings, all_chunks)
-    
-    # Reranking
-    reranked_chunks, reranked_scores = rerank_chunks(query_embedding, embed_text(embedding_chunks), embedding_chunks)
-    
-    # Generate response
-    response = generate_response(query, reranked_chunks)
-    
-    return response, embedding_scores, bm25_scores, reranked_scores
-
 def streamapplicationmain(all_chunks, chunk_embeddings, documents, filenames):
     set_dark_mode_and_styling()
+    
     if 'answer' not in st.session_state:
         st.session_state.answer = "Awaiting query..."
     if 'confidence' not in st.session_state:
@@ -197,18 +55,28 @@ def streamapplicationmain(all_chunks, chunk_embeddings, documents, filenames):
     st.text_area("Confidence Level", value=f"{st.session_state.confidence * 100:.2f}%", height=100)
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Displaying filenames and some document snippets in Streamlit
+    # Debugging output to check if documents and filenames are being populated correctly
     st.subheader("Loaded Files and Document Snippets")
-    for i, filename in enumerate(filenames):
-        st.write(f"**File**: {filename}")
-        st.write(f"**First 200 characters**: {documents[i][:200]}...")  # Print the first 200 characters as a preview
-        st.markdown("-" * 50)
+    if len(filenames) == 0 or len(documents) == 0:
+        st.write("No files loaded. Check your source data.")
+    else:
+        for i, filename in enumerate(filenames):
+            st.write(f"**File**: {filename}")
+            st.write(f"**First 200 characters**: {documents[i][:200]}...")  # Print the first 200 characters as a preview
+            st.markdown("-" * 50)
 
-### 6. Main Function
+### Main Function
 
 def main():
     github_repo_url = "https://api.github.com/repos/username/repo/contents/"  # Replace with your GitHub repo URL
     documents, filenames = load_and_preprocess_data_from_github(github_repo_url)
+    
+    # Add debugging print to check loaded documents and filenames
+    print(f"Documents: {documents}")
+    print(f"Filenames: {filenames}")
+    
+    if len(documents) == 0 or len(filenames) == 0:
+        print("No documents found. Check your GitHub repo access.")
     
     # Chunking the documents
     all_chunks = []
