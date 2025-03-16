@@ -1,6 +1,7 @@
 import os
-import torch
 import re
+import requests
+import torch
 import numpy as np
 import nltk
 import streamlit as st
@@ -8,26 +9,17 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from nltk.tokenize import sent_tokenize, word_tokenize
 from rank_bm25 import BM25Okapi
-import requests
-import base64
 
 # Ensure NLTK resources are available
-nltk.download('punkt', quiet=True)
-nltk.download('stopwords', quiet=True)
+nltk.download('punkt')
+nltk.download('stopwords')
 nltk.data.path.append(os.path.expanduser("~/.cache/nltk_data"))
-
-# Check if punkt tokenizer is available
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    print("punkt tokenizer data is missing. Please check your NLTK installation.")
 
 # Set up GPU availability check
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
-# 1. Data Collection & Preprocessing
-
+### 1. Data Collection & Preprocessing
 def load_and_preprocess_data_from_github():
     """Loads and preprocesses financial text data from the GitHub repository."""
     username = "VigneshKumarMuruganantham"  # Your GitHub username
@@ -45,6 +37,10 @@ def load_and_preprocess_data_from_github():
     
     response = requests.get(github_api_url, headers=headers)
     
+    # Debugging: Print response status code and content
+    print(f"Response Status Code: {response.status_code}")
+    print(f"Response Content: {response.text}")
+    
     if response.status_code == 200:
         files = response.json()
         documents = []
@@ -60,7 +56,11 @@ def load_and_preprocess_data_from_github():
                     # Print filename and first 50 characters of the content
                     print(f"Loaded file: {file['name']}")
                     print(f"First 50 characters: {text[:50]}")
-        return documents, filenames
+        if documents:
+            return documents, filenames
+        else:
+            print("No .txt files found in the specified folder.")
+            return [], []
     else:
         print(f"Error fetching files from GitHub: {response.status_code}")
         return [], []
@@ -89,8 +89,7 @@ def chunk_text(text, chunk_size=512, overlap=50):
     print(f"Chunked text into {len(overlapped_chunks)} chunks.")
     return overlapped_chunks
 
-# 2. Basic RAG Implementation
-
+### 2. Basic RAG Implementation
 def embed_text(texts, model_name="all-MiniLM-L6-v2"):
     """Embeds text using Sentence Transformers."""
     model = SentenceTransformer(model_name)
@@ -102,8 +101,7 @@ def retrieve_relevant_chunks_embedding(query_embedding, document_embeddings, chu
     relevant_indices = np.argsort(similarities)[::-1][:top_k]
     return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
 
-# 3. Advanced RAG Implementation (Multi-Stage Retrieval)
-
+### 3. Advanced RAG Implementation (Multi-Stage Retrieval)
 def retrieve_relevant_chunks_bm25(query, documents, top_k=3):
     """Retrieves relevant chunks using BM25."""
     tokenized_docs = [word_tokenize(doc.lower()) for doc in documents]
@@ -117,22 +115,20 @@ def rerank_chunks(query_embedding, chunk_embeddings, chunks, top_k=3):
     """Reranks chunks based on embedding similarity."""
     similarities = cosine_similarity([query_embedding], chunk_embeddings)[0]
     relevant_indices = np.argsort(similarities)[::-1][:top_k]
-    print(f"Reranked {top_k} chunks.")  # debug
+    print(f"Reranked {top_k} chunks.") #debug
     return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
 
 def generate_response(query, relevant_chunks):
     """Generates a response using retrieved chunks."""
     return " ".join(relevant_chunks)
 
-# 4. Guard Rail Implementation
-
+### 4. Guard Rail Implementation
 def is_valid_financial_query(query):
     """Validates if the query is a financial question."""
     financial_keywords = ["revenue", "profit", "earnings", "expenses", "balance sheet", "cash flow", "financial", "growth", "debt", "assets", "liabilities"]
     return any(keyword in query.lower() for keyword in financial_keywords)
 
-# 5. Streamlit Implementation
-
+### 5. Streamlit Implementation
 def set_dark_mode_and_styling():
     """Injects custom CSS for dark mode and styling."""
     custom_css = """
@@ -195,14 +191,13 @@ def streamapplicationmain(all_chunks, chunk_embeddings, documents):
     st.text_area("Confidence Level", value=f"{st.session_state.confidence * 100:.2f}%", height=100)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# 6. Main Function
-
+### 6. Main Function
 def main():
     documents, filenames = load_and_preprocess_data_from_github()
     if not documents:
-        st.error("No documents found in the GitHub repository.")
+        print("No documents found.")
         return
-    
+
     all_chunks = []
     for doc in documents:
         all_chunks.extend(chunk_text(doc))
