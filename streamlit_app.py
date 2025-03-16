@@ -90,7 +90,9 @@ def embed_text(texts, model_name="all-MiniLM-L6-v2"):
 
 def retrieve_relevant_chunks_embedding(query_embedding, document_embeddings, chunks, top_k=3):
     """Retrieves relevant chunks based on embedding similarity."""
-    similarities = cosine_similarity([query_embedding], document_embeddings)[0]
+    # Reshape query_embedding to match the dimensions of document_embeddings
+    query_embedding = query_embedding.reshape(1, -1)
+    similarities = cosine_similarity(query_embedding, document_embeddings)[0]
     relevant_indices = np.argsort(similarities)[::-1][:top_k]
     return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
 
