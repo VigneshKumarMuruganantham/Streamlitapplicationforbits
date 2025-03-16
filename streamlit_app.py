@@ -8,8 +8,6 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from nltk.tokenize import sent_tokenize, word_tokenize
 from rank_bm25 import BM25Okapi
-import requests
-import base64
 
 # Ensure NLTK resources are available
 nltk.download('punkt')
@@ -20,40 +18,24 @@ nltk.data.path.append(os.path.expanduser("~/.cache/nltk_data"))
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
-# GitHub repository details
-username = "VigneshKumarMuruganantham"  # Your GitHub username
-repository = "Streamlitapplicationforbits"  # Your repository name
-file_path = "financial_data"  # Folder name in your repository
-branch = "main"  # Branch name
-
-# GitHub API base URL to fetch files from the repository
-github_api_url = f"https://api.github.com/repos/{username}/{repository}/contents/{file_path}?ref={branch}"
-
-def get_github_files():
-    """Fetches files from the GitHub repository."""
-    response = requests.get(github_api_url)
-    if response.status_code == 200:
-        files = response.json()
-        documents = []
-        filenames = []
-        for file in files:
-            if file['name'].endswith(".txt"):
-                file_url = file['download_url']
-                file_response = requests.get(file_url)
-                if file_response.status_code == 200:
-                    text = re.sub(r'\s+', ' ', file_response.text).strip()
-                    documents.append(text)
-                    filenames.append(file['name'])
-        print(f"Loaded {len(documents)} documents from GitHub.")
-        return documents, filenames
-    else:
-        print("Error fetching files from GitHub.")
-        return [], []
-
 ### 1. Data Collection & Preprocessing
-def load_and_preprocess_data(data_dir=None):
-    """Loads and preprocesses financial text data from GitHub."""
-    documents, filenames = get_github_files()
+
+def load_and_preprocess_data(data_dir):
+    """Loads and preprocesses financial text data from a directory."""
+    documents = []
+    filenames = []
+    for filename in os.listdir(data_dir):
+        if filename.endswith(".txt"):
+            filepath = os.path.join(data_dir, filename)
+            with open(filepath, "r", encoding="utf-8") as f:
+                text = re.sub(r'\s+', ' ', f.read()).strip()
+                documents.append(text)
+                filenames.append(filename)
+                # Print filename and preview of the first few words in the file
+                print(f"Loaded file: {filename}")
+                preview_text = ' '.join(text.split()[:10])  # Preview first 10 words
+                print(f"Preview text: {preview_text}")
+    print(f"Loaded {len(documents)} documents.")
     return documents, filenames
 
 def chunk_text(text, chunk_size=512, overlap=50):
@@ -108,7 +90,7 @@ def rerank_chunks(query_embedding, chunk_embeddings, chunks, top_k=3):
     """Reranks chunks based on embedding similarity."""
     similarities = cosine_similarity([query_embedding], chunk_embeddings)[0]
     relevant_indices = np.argsort(similarities)[::-1][:top_k]
-    print(f"Reranked {top_k} chunks.")  # debug
+    print(f"Reranked {top_k} chunks.")  # Debug
     return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
 
 def generate_response(query, relevant_chunks):
@@ -188,7 +170,9 @@ def streamapplicationmain(all_chunks, chunk_embeddings, documents):
 
 ### 6. Main Function
 def main():
-    documents, filenames = load_and_preprocess_data()
+
+    data_dir = "C:/Users/bhara/financial_data"  # Replace with your data directory
+    documents, filenames = load_and_preprocess_data(data_dir)
     all_chunks = []
     for doc in documents:
         all_chunks.extend(chunk_text(doc))
