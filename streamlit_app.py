@@ -6,7 +6,7 @@ import nltk
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.tokenize import word_tokenize
 from rank_bm25 import BM25Okapi
 
 # Create a directory for NLTK data if it doesn't exist
@@ -57,13 +57,13 @@ def load_and_preprocess_data(data_dir):
     return documents, filenames
 
 def chunk_text(text, chunk_size=512, overlap=50):
-    """Chunks text into smaller pieces with overlap."""
-    try:
-        sentences = sent_tokenize(text)
-    except LookupError:
-        # Fallback to a simpler sentence splitting if NLTK fails
-        print("NLTK tokenization failed. Using simple sentence splitting.")
-        sentences = [s.strip() + "." for s in text.split(".") if s.strip()]
+    """Chunks text into smaller pieces with overlap.
+    Uses manual sentence splitting to avoid NLTK dependencies."""
+    # Simple sentence splitting by punctuation
+    sentences = []
+    for sent in re.split(r'(?<=[.!?])\s+', text):
+        if sent.strip():
+            sentences.append(sent.strip())
     
     chunks = []
     current_chunk = ""
@@ -79,7 +79,9 @@ def chunk_text(text, chunk_size=512, overlap=50):
     overlapped_chunks = []
     for i in range(len(chunks)):
         if i + 1 < len(chunks):
-            overlapped_chunks.append(chunks[i] + " " + " ".join(chunks[i+1].split(" ")[:overlap]))
+            words = chunks[i+1].split()
+            overlap_words = words[:min(overlap, len(words))]
+            overlapped_chunks.append(chunks[i] + " " + " ".join(overlap_words))
         else:
             overlapped_chunks.append(chunks[i])
     
@@ -111,20 +113,29 @@ def retrieve_relevant_chunks_embedding(query_embedding, document_embeddings, chu
 
 ### 3. Advanced RAG Implementation (Multi-Stage Retrieval)
 
+def simple_tokenize(text):
+    """Simple tokenization function to avoid NLTK dependencies."""
+    # Remove punctuation and convert to lowercase
+    text = re.sub(r'[^\w\s]', '', text.lower())
+    return text.split()
+
 def retrieve_relevant_chunks_bm25(query, documents, top_k=3):
     """Retrieves relevant chunks using BM25."""
     if not documents:
         return [], np.array([])
     
     try:
-        tokenized_docs = [word_tokenize(doc.lower()) for doc in documents]
+        # Use simple tokenization instead of NLTK's word_tokenize
+        tokenized_docs = [simple_tokenize(doc) for doc in documents]
         bm25 = BM25Okapi(tokenized_docs)
-        tokenized_query = word_tokenize(query.lower())
+        tokenized_query = simple_tokenize(query)
         doc_scores = bm25.get_scores(tokenized_query)
         relevant_indices = np.argsort(doc_scores)[::-1][:min(top_k, len(doc_scores))]
         return [documents[i] for i in relevant_indices], doc_scores[relevant_indices]
     except Exception as e:
         st.error(f"Error in BM25 retrieval: {e}")
+        import traceback
+        st.text(traceback.format_exc())
         return [], np.array([])
 
 def rerank_chunks(query_embedding, chunk_embeddings, chunks, top_k=3):
@@ -137,19 +148,52 @@ def rerank_chunks(query_embedding, chunk_embeddings, chunks, top_k=3):
     print(f"Reranked {min(top_k, len(similarities))} chunks.")  # debug
     return [chunks[i] for i in relevant_indices], similarities[relevant_indices]
 
-def generate_response(query, relevant_chunks):
+def generate_response(query, relevant_chunks, source_indices, source_filenames):
     """Generates a response using retrieved chunks."""
     if not relevant_chunks:
         return "No relevant information found. Please try a different query."
     
-    # Simple response generation by concatenating chunks
-    # In a production system, this should be replaced with an LLM call
-    response = "Based on the available financial information:\n\n"
-    for i, chunk in enumerate(relevant_chunks):
-        response += f"Source {i+1}: {chunk[:200]}...\n\n"
+    # Generate response with only document titles instead of content
+    response = "Based on the following financial documents:\n\n"
     
-    response += "Note: For a more detailed analysis, please consult a financial advisor."
+    # Use a set to avoid duplicate document references
+    mentioned_docs = set()
+    
+    for i, (chunk, idx) in enumerate(zip(relevant_chunks, source_indices)):
+        if idx < len(source_filenames):
+            filename = source_filenames[idx]
+            if filename not in mentioned_docs:
+                response += f"- {filename}\n"
+                mentioned_docs.add(filename)
+    
+    response += "\n"
+    response += "I found information relevant to your query. For detailed analysis, please consult a financial advisor."
     return response
+
+def get_document_index(chunk, all_chunks, documents):
+    """Get the document index for a given chunk."""
+    # Find which document contains this chunk
+    chunk_idx = -1
+    try:
+        chunk_idx = all_chunks.index(chunk)
+    except ValueError:
+        pass
+        
+    if chunk_idx == -1:
+        # Direct matching failed, try substring matching
+        for i, doc in enumerate(documents):
+            if chunk in doc:
+                return i
+        return 0  # Default to first document if not found
+        
+    # Count chunks to determine source document
+    count = 0
+    for i, doc in enumerate(documents):
+        doc_chunks = chunk_text(doc)
+        count += len(doc_chunks)
+        if chunk_idx < count:
+            return i
+    return 0  # Default to first document if not found
 
 ### 4. Guard Rail Implementation
 
@@ -184,7 +228,7 @@ def set_dark_mode_and_styling():
     """
     st.markdown(custom_css, unsafe_allow_html=True)
 
-def handle_query(query, all_chunks, chunk_embeddings, documents):
+def handle_query(query, all_chunks, chunk_embeddings, documents, filenames):
     """Handles user query."""
     if not query.strip():
         st.warning("Please enter a query.")
@@ -209,12 +253,15 @@ def handle_query(query, all_chunks, chunk_embeddings, documents):
         # Reranking
         reranked_chunks, reranked_scores = rerank_chunks(query_embedding, embed_text(embedding_chunks), embedding_chunks)
         
-        # Generate response
-        response = generate_response(query, reranked_chunks)
+        # Get document indices for chunks
+        source_indices = [get_document_index(chunk, all_chunks, documents) for chunk in reranked_chunks]
+        
+        # Generate response with document titles only
+        response = generate_response(query, reranked_chunks, source_indices, filenames)
     
     return response, embedding_scores, bm25_scores, reranked_scores
 
-def streamapplicationmain(all_chunks, chunk_embeddings, documents):
+def streamapplicationmain(all_chunks, chunk_embeddings, documents, filenames):
     set_dark_mode_and_styling()
     
     if 'answer' not in st.session_state:
@@ -231,11 +278,15 @@ def streamapplicationmain(all_chunks, chunk_embeddings, documents):
         st.sidebar.error("No documents loaded. Add .txt files to the financial_data directory.")
     else:
         st.sidebar.success(f"Loaded {len(documents)} documents with {len(all_chunks)} chunks.")
+        # Display only document titles, not content
+        st.sidebar.subheader("Available Documents")
+        for filename in filenames:
+            st.sidebar.text(f"- {filename}")
 
     query = st.text_input("Enter your financial query:")
 
     if st.button("Get Answer"):
-        response, embedding_scores, bm25_scores, reranked_scores = handle_query(query, all_chunks, chunk_embeddings, documents)
+        response, embedding_scores, bm25_scores, reranked_scores = handle_query(query, all_chunks, chunk_embeddings, documents, filenames)
         
         if response:
             st.session_state.answer = response
@@ -271,7 +322,7 @@ def main():
         
         chunk_embeddings = embed_text(all_chunks)
         
-        streamapplicationmain(all_chunks, chunk_embeddings, documents)
+        streamapplicationmain(all_chunks, chunk_embeddings, documents, filenames)
         
     except Exception as e:
         st.error(f"An unexpected error occurred: {e}")
