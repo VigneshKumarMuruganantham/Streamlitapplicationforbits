@@ -119,4 +119,3 @@ else:
         except Exception as e:
             st.info("The file doesn't appear to be in a structured format for data analysis.")
             st.text(f"Parsing error: {str(e)}")
-Last edited 1 minute ago
