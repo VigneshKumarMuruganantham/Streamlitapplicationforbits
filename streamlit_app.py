@@ -20,39 +20,20 @@ print('Using device:', device)
 
 ### 1. Data Collection & Preprocessing
 
-def fetch_file_list():
-    """Fetches file list from the financial_data directory."""
-    try:
-        # Get the list of files in the 'financial_data' folder
-        files = os.listdir("financial_data")
-        # Filter for .txt files
-        txt_files = [f for f in files if f.endswith('.txt')]
-        return txt_files
-    except FileNotFoundError:
-        st.error("The 'financial_data' folder was not found.")
-        return []
-
-def read_file_content(file_name):
-    """Reads the content of a .txt file."""
-    try:
-        with open(os.path.join("financial_data", file_name), "r", encoding="utf-8") as file:
-            content = file.read()
-        return content
-    except Exception as e:
-        st.error(f"Error reading {file_name}: {e}")
-        return ""
-
-def load_and_preprocess_data():
-    """Loads and preprocesses financial text data from the directory."""
+def load_and_preprocess_data(data_dir):
+    """Loads and preprocesses financial text data from a directory."""
     documents = []
     filenames = []
-    file_list = fetch_file_list()
-    for file_name in file_list:
-        text = read_file_content(file_name)
-        if text:
-            text = re.sub(r'\s+', ' ', text).strip()  # Clean up extra spaces
-            documents.append(text)
-            filenames.append(file_name)
+    for filename in os.listdir(data_dir):
+        if filename.endswith(".txt"):
+            filepath = os.path.join(data_dir, filename)
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    text = re.sub(r'\s+', ' ', f.read()).strip()
+                    documents.append(text)
+                    filenames.append(filename)
+            except Exception as e:
+                st.error(f"Error reading {filename}: {e}")
     print(f"Loaded {len(documents)} documents.")
     return documents, filenames
 
@@ -189,7 +170,8 @@ def streamapplicationmain(all_chunks, chunk_embeddings, documents):
 ### 6. Main Function
 def main():
 
-    documents, filenames = load_and_preprocess_data()
+    data_dir = "financial_data"  # Replace with your data directory
+    documents, filenames = load_and_preprocess_data(data_dir)
     all_chunks = []
     for doc in documents:
         all_chunks.extend(chunk_text(doc))
